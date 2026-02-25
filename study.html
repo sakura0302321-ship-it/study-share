@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StudyShare - Firebase Realtime</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    <style>
+        body { background-color: #f1f5f9; font-family: sans-serif; }
+        .study-blue { color: #3498db; }
+        .bg-study-blue { background-color: #3498db; }
+        .card { background: white; border-radius: 20px; padding: 1.25rem; margin-bottom: 1rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+        .bar-container { display: flex; align-items: flex-end; justify-content: space-between; height: 140px; padding-top: 25px; gap: 2px; }
+        .bar-item { display: flex; flex-direction: column; align-items: center; flex: 1; min-width: 0; }
+        .bar { width: 80%; border-radius: 4px 4px 0 0; transition: all 0.5s ease; position: relative; min-height: 2px; }
+        .bar:hover::after { content: attr(data-val); position: absolute; top: -22px; left: 50%; transform: translateX(-50%); font-size: 9px; font-weight: bold; color: #3498db; white-space: nowrap; z-index: 10; }
+        .bar-label { font-size: 7px; color: #94a3b8; margin-top: 6px; transform: scale(0.9); }
+        [v-cloak] { display: none !important; }
+    </style>
+</head>
+<body>
+    <div id="app" v-cloak class="max-w-md mx-auto p-4 pb-24">
+        
+        <header class="card text-center border-t-4 border-blue-400">
+            <div class="flex justify-between text-[10px] text-gray-400 font-bold mb-1">
+                <span>受験予定日（共有）</span>
+                <input type="date" v-model="examDate" @change="save" class="outline-none bg-transparent">
+            </div>
+            <div class="text-4xl font-black study-blue italic tracking-tighter">あと {{ daysToExam }} 日</div>
+        </header>
+
+        <section class="card">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xs font-bold text-gray-500 italic">学習の軌跡</h2>
+                <div class="flex bg-gray-100 p-1 rounded-lg text-[10px]">
+                    <button @click="graphMode = 'week'" :class="graphMode === 'week' ? 'bg-white shadow text-blue-600' : 'text-gray-400'" class="px-3 py-1 rounded-md font-bold transition">週間</button>
+                    <button @click="graphMode = 'month'" :class="graphMode === 'month' ? 'bg-white shadow text-blue-600' : 'text-gray-400'" class="px-3 py-1 rounded-md font-bold transition ml-1">月間</button>
+                </div>
+            </div>
+            
+            <div class="bar-container">
+                <div v-for="day in graphStats" :key="day.date" class="bar-item">
+                    <div class="bar bg-study-blue" 
+                         :style="{ height: Math.min(day.hours * 12, 110) + 'px' }" 
+                         :data-val="day.hours + 'h'"></div>
+                    <span class="bar-label" v-if="graphMode === 'week' || day.isFirstOfMonth">{{ day.label }}</span>
+                </div>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2 class="text-xs font-bold text-gray-500 mb-2">日付を切り替えて記録</h2>
+            <input type="date" v-model="selectedDate" class="w-full p-3 bg-gray-50 rounded-xl border-2 border-blue-100 text-lg font-bold outline-none focus:border-blue-400">
+        </section>
+
+        <section class="card bg-blue-50 border-2 border-white">
+            <h2 class="text-[11px] font-bold text-blue-600 mb-3 uppercase tracking-widest">{{ formattedSelectedDate }} の詳細記録</h2>
+            <div class="mb-4 space-y-2 max-height-40 overflow-y-auto">
+                <div v-for="log in selectedDateLogs" :key="log.id" class="flex justify-between items-center bg-white p-2 px-3 rounded-lg text-sm shadow-sm">
+                    <span><b class="study-blue">{{ log.hours }}h</b> - {{ log.category }}</span>
+                    <button @click="deleteLog(log.id)" class="text-red-400 font-bold text-xl px-2">×</button>
+                </div>
+                <p v-if="selectedDateLogs.length === 0" class="text-[10px] text-gray-400 italic text-center py-2">この日の記録はありません</p>
+            </div>
+            <div class="flex gap-2 border-t border-blue-100 pt-3">
+                <input v-model.number="logHours" type="number" step="0.5" placeholder="h" class="w-16 border-b-2 border-blue-200 p-2 outline-none focus:border-blue-500 bg-transparent text-center font-bold">
+                <input v-model="logCategory" type="text" placeholder="科目" class="flex-1 border-b-2 border-blue-200 p-2 outline-none focus:border-blue-500 bg-transparent text-sm">
+                <button @click="addLog" class="bg-study-blue text-white px-5 py-2 rounded-full text-[10px] font-bold shadow-md">保存</button>
+            </div>
+        </section>
+
+        <nav class="flex mb-4 bg-gray-200 rounded-xl p-1">
+            <button v-for="m in ['day', 'week', 'month']" @click="viewMode = m" :class="{'bg-white shadow text-blue-600': viewMode === m, 'text-gray-500': viewMode !== m}" class="flex-1 py-1.5 text-[10px] font-bold rounded-lg">
+                {{ m === 'day' ? '今日' : m === 'week' ? '週間' : '月間' }}
+            </button>
+        </nav>
+
+        <div class="flex gap-2 mb-4 bg-white rounded-full px-5 shadow-sm border border-gray-100">
+            <input v-model="newTask" type="text" :placeholder="`${viewMode}のタスクを追加...`" @keyup.enter="addTask" class="flex-1 py-3 outline-none text-sm bg-transparent">
+            <button @click="addTask" class="study-blue text-3xl">＋</button>
+        </div>
+
+        <div class="space-y-3">
+            <div v-for="task in filteredTasks" :key="task.id" class="card flex items-start gap-4 border-l-4" :style="{ borderLeftColor: task.done ? '#cbd5e0' : '#3498db' }">
+                <input type="checkbox" v-model="task.done" @change="save" class="mt-1 w-6 h-6 accent-blue-500">
+                <div class="flex-1 min-w-0">
+                    <p :class="{'line-through text-gray-400': task.done}" class="text-sm font-bold text-gray-700 break-words">{{ task.text }}</p>
+                    <div v-if="task.done" class="mt-2 bg-blue-50 p-2 rounded-lg">
+                        <input v-model="task.comment" @blur="save" placeholder="共有メモ..." class="text-[11px] text-blue-600 w-full bg-transparent outline-none italic">
+                    </div>
+                </div>
+                <button @click="deleteTask(task.id)" class="text-gray-200 hover:text-red-400 text-xl">&times;</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ★Firebaseの設定をそのまま貼り付けました
+        const firebaseConfig = {
+          apiKey: "AIzaSyAcOyQzDUvNkQGNMC1bdJonIsrpycnrypU",
+          authDomain: "study-773f5.firebaseapp.com",
+          databaseURL: "https://study-773f5-default-rtdb.firebaseio.com",
+          projectId: "study-773f5",
+          storageBucket: "study-773f5.firebasestorage.app",
+          messagingSenderId: "413705444648",
+          appId: "1:413705444648:web:4e0b11f1495451637841d",
+          measurementId: "G-3R9808L6Z6"
+        };
+
+        // 初期化
+        firebase.initializeApp(firebaseConfig);
+        const dbRef = firebase.database().ref('shared_study_v14');
+
+        window.addEventListener('load', function() {
+            const { createApp, ref, computed, onMounted } = Vue;
+            createApp({
+                setup() {
+                    const examDate = ref('2026-06-18');
+                    const selectedDate = ref(new Date().toISOString().substr(0, 10));
+                    const viewMode = ref('day');
+                    const graphMode = ref('week');
+                    const newTask = ref('');
+                    const logHours = ref(null);
+                    const logCategory = ref('');
+                    const tasks = ref([]);
+                    const logs = ref([]);
+
+                    // Firebaseからデータをリアルタイム取得
+                    onMounted(() => {
+                        dbRef.on('value', (snapshot) => {
+                            const data = snapshot.val();
+                            if (data) {
+                                tasks.value = data.tasks || [];
+                                logs.value = data.logs || [];
+                                examDate.value = data.examDate || '2026-06-18';
+                            }
+                        });
+                    });
+
+                    // 保存処理をFirebase送信に統合
+                    const save = () => {
+                        dbRef.set({
+                            tasks: JSON.parse(JSON.stringify(tasks.value)),
+                            logs: JSON.parse(JSON.stringify(logs.value)),
+                            examDate: examDate.value
+                        });
+                    };
+
+                    const daysToExam = computed(() => {
+                        const diff = new Date(examDate.value) - new Date();
+                        return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+                    });
+
+                    const formattedSelectedDate = computed(() => {
+                        const d = new Date(selectedDate.value);
+                        return `${d.getMonth()+1}月${d.getDate()}日`;
+                    });
+
+                    const selectedDateLogs = computed(() => {
+                        return logs.value.filter(l => l.date === selectedDate.value);
+                    });
+
+                    const graphStats = computed(() => {
+                        const range = graphMode.value === 'week' ? 7 : 30;
+                        const result = [];
+                        for (let i = range - 1; i >= 0; i--) {
+                            const d = new Date();
+                            d.setDate(d.getDate() - i);
+                            const dStr = d.toISOString().substr(0, 10);
+                            const total = logs.value
+                                .filter(l => l.date === dStr)
+                                .reduce((s, l) => s + Number(l.hours || 0), 0);
+                            result.push({
+                                label: (d.getMonth() + 1) + '/' + d.getDate(),
+                                hours: total,
+                                date: dStr,
+                                isFirstOfMonth: d.getDate() === 1
+                            });
+                        }
+                        return result;
+                    });
+
+                    const filteredTasks = computed(() => tasks.value.filter(t => t.type === viewMode.value));
+
+                    const addTask = () => {
+                        if (!newTask.value) return;
+                        tasks.value.unshift({ id: Date.now(), text: newTask.value, done: false, comment: '', type: viewMode.value });
+                        save(); newTask.value = '';
+                    };
+
+                    const addLog = () => {
+                        if (!logHours.value) return;
+                        logs.value.unshift({ id: Date.now(), date: selectedDate.value, hours: logHours.value, category: logCategory.value || '未分類' });
+                        save(); logHours.value = null; logCategory.value = '';
+                    };
+
+                    const deleteLog = (id) => { logs.value = logs.value.filter(l => l.id !== id); save(); };
+                    const deleteTask = (id) => { tasks.value = tasks.value.filter(t => t.id !== id); save(); };
+
+                    return { examDate, selectedDate, viewMode, graphMode, newTask, logHours, logCategory, tasks, logs, daysToExam, formattedSelectedDate, selectedDateLogs, graphStats, filteredTasks, addTask, addLog, deleteLog, deleteTask, save };
+                }
+            }).mount('#app');
+        });
+    </script>
+</body>
+</html>
