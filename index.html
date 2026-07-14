@@ -6,7 +6,7 @@
     <title>StudyShare - Supabase</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
     <style>
         body { background-color: #f1f5f9; font-family: sans-serif; }
         .study-blue { color: #3498db; }
@@ -25,7 +25,7 @@
         
         <header class="card text-center border-t-4 border-blue-400">
             <div class="flex justify-between text-[10px] text-gray-400 font-bold mb-1">
-                <span>受験予定日（Supabase自動共有）</span>
+                <span>受験予定日（自動共有）</span>
                 <input type="date" v-model="examDate" @change="save" class="outline-none bg-transparent">
             </div>
             <div class="text-4xl font-black study-blue italic tracking-tighter">あと {{ daysToExam }} 日</div>
@@ -95,14 +95,15 @@
             </div>
         </div>
         
-        <div class="text-center text-[9px] text-gray-400 mt-4">⚡ Supabase経由でリアルタイム同期中</div>
+        <div class="text-center text-[9px] text-gray-400 mt-4">⚡ Supabaseで自動同期中</div>
     </div>
 
     <script>
-        // ★ここに Supabase で取得した情報を貼り付けてください
+        // ★ここにあなた専用のアクセス情報を設定しています
         const SUPABASE_URL = "https://fvxbwhneqqeewhsfctzl.supabase.co"; 
-        const SUPABASE_ANON_KEY = "sb_publishable_Fb36vTwHkmA8tEkqYJk6FQ_2Q0HlFPf";
+        const SUPABASE_ANON_KEY = "sb_publishable_Fb36vTwHkmA8tEkqYJk6FQ_2Q0HlFPf"; 
 
+        // 正しい初期化方法に変更
         const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         window.addEventListener('load', function() {
@@ -119,28 +120,24 @@
                     const tasks = ref([]);
                     const logs = ref([]);
 
-                    // Supabaseからデータを読み込む
                     const load = async () => {
                         const { data: rows, error } = await supabase
                             .from('study_data')
                             .select('data')
-                            .eq('id', 'shared_v1')
-                            .single();
+                            .eq('id', 'shared_v1');
                         
-                        if (rows && rows.data) {
-                            tasks.value = rows.data.tasks || [];
-                            logs.value = rows.data.logs || [];
-                            examDate.value = rows.data.examDate || '2026-06-18';
+                        if (rows && rows.length > 0 && rows[0].data) {
+                            tasks.value = rows[0].data.tasks || [];
+                            logs.value = rows[0].data.logs || [];
+                            examDate.value = rows[0].data.examDate || '2026-06-18';
                         }
                     };
 
                     onMounted(() => {
                         load();
-                        // 15秒ごとに裏側で最新データに同期する
-                        setInterval(load, 15000);
+                        setInterval(load, 15000); // 15秒ごとに自動同期
                     });
 
-                    // Supabaseへデータを保存する
                     const save = async () => {
                         const sendData = {
                             tasks: JSON.parse(JSON.stringify(tasks.value)),
@@ -163,9 +160,7 @@
                         return `${d.getMonth()+1}月${d.getDate()}日`;
                     });
 
-                    const selectedDateLogs = computed(() => {
-                        return logs.value.filter(l => l.date === selectedDate.value);
-                    });
+                    const selectedDateLogs = computed(() => logs.value.filter(l => l.date === selectedDate.value));
 
                     const graphStats = computed(() => {
                         const range = graphMode.value === 'week' ? 7 : 30;
