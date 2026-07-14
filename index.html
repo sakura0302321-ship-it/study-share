@@ -3,11 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>StudyShare - Firebase Realtime</title>
+    <title>StudyShare - Local Storage</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
     <style>
         body { background-color: #f1f5f9; font-family: sans-serif; }
         .study-blue { color: #3498db; }
@@ -26,7 +24,7 @@
         
         <header class="card text-center border-t-4 border-blue-400">
             <div class="flex justify-between text-[10px] text-gray-400 font-bold mb-1">
-                <span>受験予定日（共有）</span>
+                <span>受験予定日</span>
                 <input type="date" v-model="examDate" @change="save" class="outline-none bg-transparent">
             </div>
             <div class="text-4xl font-black study-blue italic tracking-tighter">あと {{ daysToExam }} 日</div>
@@ -83,37 +81,36 @@
             <button @click="addTask" class="study-blue text-3xl">＋</button>
         </div>
 
-        <div class="space-y-3">
+        <div class="space-y-3 mb-6">
             <div v-for="task in filteredTasks" :key="task.id" class="card flex items-start gap-4 border-l-4" :style="{ borderLeftColor: task.done ? '#cbd5e0' : '#3498db' }">
                 <input type="checkbox" v-model="task.done" @change="save" class="mt-1 w-6 h-6 accent-blue-500">
                 <div class="flex-1 min-w-0">
                     <p :class="{'line-through text-gray-400': task.done}" class="text-sm font-bold text-gray-700 break-words">{{ task.text }}</p>
                     <div v-if="task.done" class="mt-2 bg-blue-50 p-2 rounded-lg">
-                        <input v-model="task.comment" @blur="save" placeholder="共有メモ..." class="text-[11px] text-blue-600 w-full bg-transparent outline-none italic">
+                        <input v-model="task.comment" @blur="save" placeholder="メモ..." class="text-[11px] text-blue-600 w-full bg-transparent outline-none italic">
                     </div>
                 </div>
                 <button @click="deleteTask(task.id)" class="text-gray-200 hover:text-red-400 text-xl">&times;</button>
             </div>
         </div>
+
+        <!-- 2人用のデータ共有機能 -->
+        <section class="card border border-dashed border-blue-300 bg-blue-50/30">
+            <h2 class="text-xs font-bold text-gray-500 mb-2">👫 2人でデータ共有</h2>
+            <div class="flex gap-2">
+                <button @click="exportData" class="flex-1 bg-white border border-blue-300 text-blue-600 py-2 rounded-lg text-[10px] font-bold hover:bg-blue-50 transition">
+                    データをコピー
+                </button>
+                <button @click="importData" class="flex-1 bg-blue-500 text-white py-2 rounded-lg text-[10px] font-bold hover:bg-blue-600 transition">
+                    読み込む (貼り付け)
+                </button>
+            </div>
+            <p class="text-[9px] text-gray-400 mt-2 text-center">※自分のデータをコピーして相手に送ったり、相手から届いたデータを読み込めます。</p>
+        </section>
+
     </div>
 
     <script>
-        // ★Firebaseの設定をそのまま貼り付けました
-        const firebaseConfig = {
-          apiKey: "AIzaSyAcOyQzDUvNkQGNMC1bdJonIsrpycnrypU",
-          authDomain: "study-773f5.firebaseapp.com",
-          databaseURL: "https://study-773f5-default-rtdb.firebaseio.com",
-          projectId: "study-773f5",
-          storageBucket: "study-773f5.firebasestorage.app",
-          messagingSenderId: "413705444648",
-          appId: "1:413705444648:web:4e0b11f1495451637841d",
-          measurementId: "G-3R9808L6Z6"
-        };
-
-        // 初期化
-        firebase.initializeApp(firebaseConfig);
-        const dbRef = firebase.database().ref('shared_study_v14');
-
         window.addEventListener('load', function() {
             const { createApp, ref, computed, onMounted } = Vue;
             createApp({
@@ -128,25 +125,29 @@
                     const tasks = ref([]);
                     const logs = ref([]);
 
-                    // Firebaseからデータをリアルタイム取得
+                    // ローカルストレージからのロード
                     onMounted(() => {
-                        dbRef.on('value', (snapshot) => {
-                            const data = snapshot.val();
-                            if (data) {
+                        const localData = localStorage.getItem('shared_study_v14_local');
+                        if (localData) {
+                            try {
+                                const data = JSON.parse(localData);
                                 tasks.value = data.tasks || [];
                                 logs.value = data.logs || [];
                                 examDate.value = data.examDate || '2026-06-18';
+                            } catch (e) {
+                                console.error("データロードエラー", e);
                             }
-                        });
+                        }
                     });
 
-                    // 保存処理をFirebase送信に統合
+                    // 保存処理（ローカルストレージのみ）
                     const save = () => {
-                        dbRef.set({
+                        const data = {
                             tasks: JSON.parse(JSON.stringify(tasks.value)),
                             logs: JSON.parse(JSON.stringify(logs.value)),
                             examDate: examDate.value
-                        });
+                        };
+                        localStorage.setItem('shared_study_v14_local', JSON.stringify(data));
                     };
 
                     const daysToExam = computed(() => {
@@ -200,7 +201,41 @@
                     const deleteLog = (id) => { logs.value = logs.value.filter(l => l.id !== id); save(); };
                     const deleteTask = (id) => { tasks.value = tasks.value.filter(t => t.id !== id); save(); };
 
-                    return { examDate, selectedDate, viewMode, graphMode, newTask, logHours, logCategory, tasks, logs, daysToExam, formattedSelectedDate, selectedDateLogs, graphStats, filteredTasks, addTask, addLog, deleteLog, deleteTask, save };
+                    // 共有用：データのエクスポート（コピー）
+                    const exportData = () => {
+                        const data = {
+                            tasks: tasks.value,
+                            logs: logs.value,
+                            examDate: examDate.value
+                        };
+                        const serialized = btoa(unescape(encodeURIComponent(JSON.stringify(data))));
+                        navigator.clipboard.writeText(serialized).then(() => {
+                            alert("データをクリップボードにコピーしました！相手にそのまま送ってください。");
+                        }).catch(err => {
+                            alert("コピーに失敗しました。コードをコピーしてください: \n\n" + serialized);
+                        });
+                    };
+
+                    // 共有用：データのインポート（貼り付け）
+                    const importData = () => {
+                        const input = prompt("共有されたコードを貼り付けてください：");
+                        if (!input) return;
+                        try {
+                            const decoded = decodeURIComponent(escape(atob(input.trim())));
+                            const data = JSON.parse(decoded);
+                            if (confirm("データを上書きして読み込みますか？現在のデータは消去されます。")) {
+                                tasks.value = data.tasks || [];
+                                logs.value = data.logs || [];
+                                examDate.value = data.examDate || '2026-06-18';
+                                save();
+                                alert("データのインポートに成功しました！");
+                            }
+                        } catch (e) {
+                            alert("無効な共有コードです。もう一度確認してください。");
+                        }
+                    };
+
+                    return { examDate, selectedDate, viewMode, graphMode, newTask, logHours, logCategory, tasks, logs, daysToExam, formattedSelectedDate, selectedDateLogs, graphStats, filteredTasks, addTask, addLog, deleteLog, deleteTask, save, exportData, importData };
                 }
             }).mount('#app');
         });
