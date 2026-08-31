@@ -1,3 +1,5 @@
+<img width="617" height="912" alt="image" src="https://github.com/user-attachments/assets/5c5e6f7f-80ca-4ba0-aab4-60b059d07a88" />
+
 概要：
 
 StudyShareは、受験勉強の学習時間やタスクを記録・管理するための学習管理アプリです。
